@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive explorer for all Chubut (Argentina) wells, built from petroDB.">
+  <title>Chubut · Well Production Explorer | petroDB</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #183231;
+      --muted: #63716d;
+      --paper: #f3f1ea;
+      --panel: #fffefa;
+      --line: #dcded5;
+      --deep: #102c2b;
+      --accent: #e3a36f;
+      --oil: #b95f36;
+      --gas: #7161a8;
+      --water: #247f91;
+      --error: #9b352d;
+      --shadow: 0 18px 50px rgba(22, 48, 44, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    a { color: inherit; text-underline-offset: 3px; }
+    .page-shell { width: min(1180px, calc(100% - 40px)); margin-inline: auto; }
+
+    /* Hero */
+    .hero { position: relative; overflow: hidden; padding: 30px 0 50px; background: var(--deep); color: #f8f5eb; }
+    .hero::after {
+      content: ""; position: absolute; width: 520px; height: 520px; right: -170px; top: -250px;
+      border: 1px solid rgba(227,163,111,.25); border-radius: 50%;
+      box-shadow: 0 0 0 70px rgba(227,163,111,.035), 0 0 0 140px rgba(227,163,111,.025); pointer-events: none;
+    }
+    .topline { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { display: flex; align-items: center; gap: 11px; font-size: .78rem; font-weight: 750; letter-spacing: .17em; }
+    .brand-mark { width: 10px; height: 28px; border-radius: 8px; background: var(--accent); transform: skew(-14deg); }
+    .source-link { color: #d6e1dc; font-size: .86rem; }
+    .hero-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 1.6fr .8fr; gap: 56px; align-items: end; margin-top: 52px; }
+    .kicker, .eyebrow { margin: 0 0 12px; color: #9fb8ae; font-size: .72rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { max-width: 760px; margin: 0; font-size: clamp(2.3rem, 5.6vw, 4.6rem); font-weight: 560; letter-spacing: -.055em; line-height: .99; }
+    h1 span { color: var(--accent); font-family: Georgia, "Times New Roman", serif; font-style: italic; font-weight: 400; }
+    .hero-copy { margin: 0; color: #cad8d2; font-size: 1rem; }
+    .hero-copy strong { display: block; margin-bottom: 12px; color: #fff9ed; font-size: 1.12rem; font-weight: 550; }
+    .hero-stats { display: flex; flex-wrap: wrap; gap: 30px; margin-top: 36px; }
+    .hero-stat strong { display: block; font-size: 1.3rem; font-weight: 600; }
+    .hero-stat span { color: #a9bbb4; font-size: .76rem; letter-spacing: .04em; }
+
+    main { padding: 38px 0 60px; }
+
+    /* Status / notices */
+    #status {
+      position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 50;
+      padding: 11px 20px; border-radius: 999px; background: var(--deep); color: #fff9ed;
+      font-size: .85rem; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    #status[hidden] { display: none; }
+    #app-error { margin-bottom: 24px; padding: 15px 18px; border: 1px solid #d6b5a8; border-radius: 10px; background: #fff3eb; color: #74362b; }
+    #app-error[hidden] { display: none; }
+
+    section.block { margin-bottom: 46px; }
+    .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+    .block-head .eyebrow { color: #73877f; }
+    h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.3rem); font-weight: 620; letter-spacing: -.035em; line-height: 1.12; }
+    h2 span { color: var(--muted); font-weight: 400; }
+    .panel { padding: clamp(20px, 3vw, 34px); border: 1px solid rgba(24,50,49,.09); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); }
+
+    /* KPI cards */
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .kpi { padding: 16px 18px; border-radius: 11px; background: #f3f4ee; }
+    .kpi .kpi-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .72rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--metric-color, var(--muted)); }
+    .kpi strong { display: block; margin-top: 7px; font-size: clamp(1.05rem, 2vw, 1.35rem); font-weight: 620; letter-spacing: -.02em; }
+    .kpi small { display: block; margin-top: 2px; color: var(--muted); font-size: .7rem; }
+
+    .charts-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+    .chart-card { border-radius: 12px; border: 1px solid var(--line); padding: 16px; background: #fff; }
+    .chart-card h3 { margin: 0 0 12px; font-size: .9rem; }
+    .chart { width: 100%; height: 320px; }
+    .chart-sm { width: 100%; height: 320px; }
+
+    /* Explorer */
+    .explorer-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin-bottom: 16px; }
+    .field { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
+    .field label { color: var(--muted); font-size: .7rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+    .field input[type="search"], .field select {
+      padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fff;
+      font: inherit; font-size: .9rem; color: var(--ink);
+    }
+    .field input[type="search"] { min-width: 240px; }
+    .field input:focus-visible, .field select:focus-visible { outline: 3px solid #d48350; outline-offset: 2px; }
+    .result-count { color: var(--muted); font-size: .78rem; }
+
+    .explorer-grid { display: grid; grid-template-columns: 380px 1fr; gap: 16px; align-items: start; }
+    .well-list { max-height: 640px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    .well-row { display: block; width: 100%; text-align: left; padding: 12px 16px; border: 0; border-bottom: 1px solid #eee; background: transparent; cursor: pointer; font: inherit; color: inherit; }
+    .well-row:hover { background: #f7f6ef; }
+    .well-row.selected { background: #eef3ec; box-shadow: inset 3px 0 0 var(--accent); }
+    .well-row .w-sigla { font-weight: 650; }
+    .well-row .w-oil { float: right; color: var(--oil); font-weight: 600; font-size: .85rem; }
+    .well-row .w-meta { display: block; color: var(--muted); font-size: .76rem; margin-top: 2px; }
+    .well-row .w-tipo { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: #eef0e9; color: #5a6b63; font-size: .68rem; }
+    .empty-note { padding: 26px 16px; color: var(--muted); text-align: center; font-size: .85rem; }
+
+    /* Detail */
+    .well-detail .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 8px; }
+    .well-detail h3 { margin: 0; font-size: 1.5rem; letter-spacing: -.02em; }
+    .well-detail .detail-sub { color: var(--muted); font-size: .85rem; margin: 2px 0 0; }
+    .record-pill { flex: none; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .74rem; white-space: nowrap; }
+    .metadata-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 18px 24px; margin: 22px 0; padding: 20px 0; border-block: 1px solid var(--line); }
+    .metadata-grid div { min-width: 0; }
+    .metadata-grid dt { margin-bottom: 3px; color: var(--muted); font-size: .66rem; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+    .metadata-grid dd { margin: 0; overflow-wrap: anywhere; font-size: .87rem; font-weight: 560; }
+    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .total-card { padding: 15px 17px; border-radius: 11px; background: #f3f4ee; }
+    .total-card .total-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .74rem; font-weight: 700; }
+    .total-card strong { display: block; margin-top: 6px; font-size: clamp(1rem, 2vw, 1.3rem); font-weight: 620; letter-spacing: -.02em; }
+    .total-card small { display: block; margin-top: 2px; color: var(--muted); font-size: .68rem; }
+    .chart-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 8px; }
+    fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+    legend { margin-bottom: 8px; padding: 0; color: var(--muted); font-size: .72rem; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+    .metric-options { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: #f4f4ee; }
+    .metric-option { position: relative; border-radius: 7px; color: var(--muted); cursor: pointer; font-size: .8rem; font-weight: 700; }
+    .metric-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .metric-option span { display: block; padding: 7px 16px; }
+    .metric-option:has(input:checked) { background: var(--deep); color: white; box-shadow: 0 2px 6px rgba(16,44,43,.18); }
+    .active-metric-note { margin: 0; color: var(--muted); font-size: .78rem; text-align: right; }
+    .chart-error { display: grid; min-height: 220px; place-items: center; padding: 28px; border: 1px dashed #cda69b; border-radius: 10px; background: #fff7f1; color: var(--error); text-align: center; }
+    .chart-error[hidden] { display: none; }
+    .unit-note { margin: 16px 0 0; padding: 13px 16px; border-left: 3px solid #9ab3a7; border-radius: 0 8px 8px 0; background: #f0f3ed; color: #4c615a; font-size: .78rem; }
+
+    .methodology { padding-top: 20px; }
+    .method-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 22px; }
+    .method-card { padding-top: 15px; border-top: 2px solid #afbbb2; }
+    .method-card h3 { margin: 0 0 8px; font-size: .92rem; }
+    .method-card p { margin: 0; color: var(--muted); font-size: .8rem; }
+    footer { padding: 24px 0 34px; border-top: 1px solid var(--line); color: var(--muted); font-size: .74rem; }
+    .footer-inner { display: flex; justify-content: space-between; gap: 30px; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 18px; }
+
+    @media (max-width: 900px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 24px; margin-top: 44px; }
+      .charts-row, .explorer-grid { grid-template-columns: 1fr; }
+      .metadata-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .method-grid { grid-template-columns: 1fr; }
+      .well-list { max-height: 340px; }
+    }
+    @media (max-width: 620px) {
+      .page-shell { width: min(100% - 24px, 1180px); }
+      .source-link { display: none; }
+      .hero-stats { gap: 18px; }
+      .metadata-grid { grid-template-columns: 1fr; gap: 14px; }
+      .totals { grid-template-columns: 1fr; }
+      .chart-toolbar, .footer-inner { flex-direction: column; align-items: flex-start; }
+      .active-metric-note { text-align: left; }
+      .explorer-controls { align-items: stretch; }
+      .field input[type="search"] { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="page-shell">
+      <div class="topline">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"></span>PETRODB / WELL EXPLORER</div>
+        <a class="source-link" href="https://github.com/oskrgab/petrodb" target="_blank" rel="noreferrer">Source repository ↗</a>
+      </div>
+      <div class="hero-grid">
+        <div>
+          <p class="kicker">Chubut, Argentina</p>
+          <h1>Every well,<br><span>in reach.</span></h1>
+          <div class="hero-stats" aria-label="Extract summary">
+            <div class="hero-stat"><strong id="stat-wells">—</strong><span>Chubut wells</span></div>
+            <div class="hero-stat"><strong id="stat-rows">—</strong><span>monthly records</span></div>
+            <div class="hero-stat"><strong>m³</strong><span>consistent volume unit</span></div>
+          </div>
+        </div>
+        <p class="hero-copy"><strong>Search all 22,573 Chubut wells.</strong>A reproducible historical extract from petroDB, filtered and sorted client-side with DuckDB-WASM. Missing values stay visible. This is not an official or real-time production feed.</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <div id="app-error" role="alert" hidden></div>
+
+    <section class="block" aria-labelledby="overview-heading">
+      <div class="block-head">
+        <div>
+          <p class="eyebrow">Chubut · basin overview</p>
+          <h2 id="overview-heading">The whole province, at a glance.</h2>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="kpis">
+          <div class="kpi"><span class="kpi-label"><span class="dot" style="--metric-color: var(--ink)"></span>Wells</span><strong id="kpi-wells">—</strong><small>with production</small></div>
+          <div class="kpi"><span class="kpi-label"><span class="dot" style="--metric-color: var(--oil)"></span>Oil total</span><strong id="kpi-oil">—</strong><small>2006–2025</small></div>
+          <div class="kpi"><span class="kpi-label"><span class="dot" style="--metric-color: var(--gas)"></span>Gas total</span><strong id="kpi-gas">—</strong><small>2006–2025</small></div>
+          <div class="kpi"><span class="kpi-label"><span class="dot" style="--metric-color: var(--water)"></span>Water total</span><strong id="kpi-water">—</strong><small>2006–2025</small></div>
+        </div>
+        <div class="charts-row">
+          <div class="chart-card">
+            <h3>Annual production · Chubut basin</h3>
+            <div class="chart" id="basin-chart" role="img" aria-label="Chubut annual oil, gas and water production"></div>
+          </div>
+          <div class="chart-card">
+            <h3>Oil by area · top 10</h3>
+            <div class="chart-sm" id="area-chart" role="img" aria-label="Top ten Chubut areas by cumulative oil"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="explorer-heading">
+      <div class="block-head">
+        <div>
+          <p class="eyebrow">Chubut · well explorer</p>
+          <h2 id="explorer-heading">Find a well, open its record.</h2>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="explorer-controls">
+          <div class="field">
+            <label for="well-search">Search</label>
+            <input type="search" id="well-search" placeholder="Sigla, code or name…" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="filter-area">Area</label>
+            <select id="filter-area"><option value="">All areas</option></select>
+          </div>
+          <div class="field">
+            <label for="filter-type">Resource type</label>
+            <select id="filter-type"><option value="">All types</option></select>
+          </div>
+          <div class="field">
+            <label for="filter-sort">Sort by</label>
+            <select id="filter-sort">
+              <option value="sigla">Sigla</option>
+              <option value="oil">Total oil</option>
+            </select>
+          </div>
+          <p class="result-count" id="result-count"></p>
+        </div>
+
+        <div class="explorer-grid">
+          <div class="well-list" id="well-list" role="listbox" aria-label="Chubut wells"></div>
+          <div class="well-detail" id="well-detail">
+            <div class="empty-note" id="detail-empty">Select a well to see its production record.</div>
+            <div id="detail-content" hidden>
+              <div class="detail-head">
+                <div>
+                  <h3 id="detail-sigla">—</h3>
+                  <p class="detail-sub" id="detail-sub">—</p>
+                </div>
+                <span class="record-pill" id="detail-pill">—</span>
+              </div>
+              <dl class="metadata-grid" id="detail-meta"></dl>
+              <div class="totals" aria-label="Selected well totals">
+                <div class="total-card" style="--metric-color: var(--oil)"><span class="total-label"><span class="dot" aria-hidden="true"></span>Oil total</span><strong id="detail-oil">—</strong><small id="detail-oil-cov"></small></div>
+                <div class="total-card" style="--metric-color: var(--gas)"><span class="total-label"><span class="dot" aria-hidden="true"></span>Gas total</span><strong id="detail-gas">—</strong><small id="detail-gas-cov"></small></div>
+                <div class="total-card" style="--metric-color: var(--water)"><span class="total-label"><span class="dot" aria-hidden="true"></span>Water total</span><strong id="detail-water">—</strong><small id="detail-water-cov"></small></div>
+              </div>
+              <div class="chart-toolbar">
+                <fieldset id="well-metric-control">
+                  <legend>Chart metric</legend>
+                  <div class="metric-options">
+                    <label class="metric-option"><input type="radio" name="well-metric" value="oil" checked><span>Oil</span></label>
+                    <label class="metric-option"><input type="radio" name="well-metric" value="gas"><span>Gas</span></label>
+                    <label class="metric-option"><input type="radio" name="well-metric" value="water"><span>Water</span></label>
+                  </div>
+                </fieldset>
+                <p class="active-metric-note" id="well-active-metric">Monthly oil volume · m³</p>
+              </div>
+              <div class="chart" id="well-chart" role="img" aria-label="Selected well monthly production"></div>
+              <div class="chart-error" id="well-chart-error" role="alert" hidden>The chart library could not be loaded.</div>
+              <p class="unit-note"><strong>Gas unit:</strong> Argentina's <code>prod_gas</code> is reported in thousands of m³; the extractor multiplies by 1,000 so oil, gas and water all display in m³. Injection volumes (<code>iny_*</code>) are available in the data but not charted here.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="methodology" aria-labelledby="methodology-heading">
+      <p class="eyebrow">Methodology &amp; provenance</p>
+      <h2 id="methodology-heading">Read the record, not an invented trend.</h2>
+      <div class="method-grid">
+        <article class="method-card">
+          <h3>Filtered, not downloaded whole</h3>
+          <p><code>build_data.py</code> reads petroDB over HTTP Range, keeps only Chubut wells, and sorts by well so per-well lookups stay fast.</p>
+        </article>
+        <article class="method-card">
+          <h3>SQL in the browser</h3>
+          <p>DuckDB-WASM runs the queries locally. Search, filters and aggregates hit the in-memory tables — no server round-trips, no re-download.</p>
+        </article>
+        <article class="method-card">
+          <h3>Null means not reported</h3>
+          <p>Missing months stay gaps (no interpolation). Totals count only numeric values and show monthly coverage.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="page-shell footer-inner">
+      <p>Generated <span id="generated-at">—</span> · Historical extract, not official real-time reporting.</p>
+      <div class="footer-links">
+        <a href="https://huggingface.co/datasets/oskrgab/petrodb" target="_blank" rel="noreferrer">Hugging Face dataset ↗</a>
+        <a href="https://github.com/oskrgab/petrodb" target="_blank" rel="noreferrer">GitHub repository ↗</a>
+      </div>
+    </div>
+  </footer>
+
+  <div id="status" role="status" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+  <script type="module">
+    import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm";
+
+    "use strict";
+
+    // ---------------- config ----------------
+    const METRICS = {
+      oil:   { label: "Oil",   color: "#b95f36" },
+      gas:   { label: "Gas",   color: "#7161a8" },
+      water: { label: "Water", color: "#247f91" }
+    };
+    const LIST_LIMIT = 200;
+
+    // ---------------- state ----------------
+    let conn = null;
+    let wells = [];            // lean well list
+    let wellTotals = new Map(); // idpozo -> { oil, gas, water }
+    let annual = [];
+    let totalRows = 0;
+    let selectedWell = null;
+    let selectedSeries = null;
+    const charts = new Map();
+
+    // ---------------- formatting ----------------
+    const volumeFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 });
+    const compactFormatter = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+    const totalFormatter  = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
+    const numFormatter    = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+    const isNum = v => typeof v === "number" && Number.isFinite(v);
+    const escapeHTML = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+
+    function fmtVolume(v) { return isNum(v) ? `${volumeFormatter.format(v)} m³` : "Not reported"; }
+    function fmtCompact(v) { return isNum(v) ? `${compactFormatter.format(v)} m³` : "Not reported"; }
+
+    // ---------------- status / errors ----------------
+    function showStatus(msg) { const el = document.getElementById("status"); el.textContent = msg; el.hidden = false; }
+    function hideStatus() { document.getElementById("status").hidden = true; }
+    function showError(msg) { const el = document.getElementById("app-error"); el.textContent = msg; el.hidden = false; hideStatus(); }
+
+    // ---------------- duckdb helpers ----------------
+    async function query(sql) {
+      const table = await conn.query(sql);
+      const arr = table.toArray();
+      return arr.map(r => (r && typeof r.toJSON === "function") ? r.toJSON() : r);
+    }
+
+    // ---------------- init ----------------
+    async function init() {
+      try {
+        showStatus("Starting DuckDB-WASM…");
+        const bundles = duckdb.getJsDelivrBundles();
+        const bundle = await duckdb.selectBundle(bundles);
+        const workerUrl = URL.createObjectURL(
+          new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" })
+        );
+        const worker = new Worker(workerUrl);
+        const logger = new duckdb.ConsoleLogger();
+        const db = new duckdb.AsyncDuckDB(logger, worker);
+        await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+        URL.revokeObjectURL(workerUrl);
+        conn = await db.connect();
+
+        showStatus("Loading parquet extracts…");
+        const base = new URL("data/", location.href).href;
+        await db.registerFileURL("chubut_wells.parquet",   base + "chubut_wells.parquet",   duckdb.DuckDBDataProtocol.HTTP, false);
+        await db.registerFileURL("chubut_monthly.parquet", base + "chubut_monthly.parquet", duckdb.DuckDBDataProtocol.HTTP, false);
+
+        await conn.query("CREATE VIEW wells AS SELECT * FROM read_parquet('chubut_wells.parquet')");
+        await conn.query("CREATE VIEW monthly AS SELECT * FROM read_parquet('chubut_monthly.parquet')");
+
+        showStatus("Aggregating production…");
+        wells = await query(
+          "SELECT idpozo::INTEGER AS idpozo, sigla, codigopropio, nombrepropio, " +
+          "area, yacimiento, formacion, formprod, " +
+          "tipo_recurso, clasificacion, has_production " +
+          "FROM wells ORDER BY sigla"
+        );
+        const totalsRows = await query(
+          "SELECT idpozo::INTEGER AS idpozo, SUM(prod_pet) AS oil, " +
+          "SUM(prod_gas) * 1000.0 AS gas, SUM(prod_agua) AS water " +
+          "FROM monthly GROUP BY idpozo"
+        );
+        wellTotals = new Map(totalsRows.map(r => [r.idpozo, { oil: r.oil || 0, gas: r.gas || 0, water: r.water || 0 }]));
+        for (const w of wells) {
+          const t = wellTotals.get(w.idpozo) || { oil: 0, gas: 0, water: 0 };
+          w.totalOil = t.oil; w.totalGas = t.gas; w.totalWater = t.water;
+        }
+        annual = await query(
+          "SELECT YEAR(fecha)::INTEGER AS y, SUM(prod_pet) AS oil, " +
+          "SUM(prod_gas) * 1000.0 AS gas, SUM(prod_agua) AS water " +
+          "FROM monthly GROUP BY y ORDER BY y"
+        );
+        totalRows = (await query("SELECT count(*)::INTEGER AS n FROM monthly"))[0].n;
+
+        await loadManifest();
+        buildFilters();
+        renderOverview();
+        renderWellList();
+        hideStatus();
+      } catch (err) {
+        console.error(err);
+        showError("Failed to load the dashboard: " + err.message +
+          ". Make sure you ran `uv run python build_data.py` and are serving the folder over HTTP.");
+      }
+    }
+
+    async function loadManifest() {
+      try {
+        const res = await fetch(new URL("data/manifest.json", location.href));
+        if (res.ok) {
+          const m = await res.json();
+          document.getElementById("generated-at").textContent = `${m.generated_at} (UTC)`;
+        }
+      } catch { /* non-critical */ }
+    }
+
+    // ---------------- overview ----------------
+    function renderOverview() {
+      const producers = wells.filter(w => w.has_production).length;
+      const sum = arr => arr.reduce((a, r) => a + (isNum(r) ? r : 0), 0);
+      const totalOil = sum(annual.map(r => r.oil));
+      const totalGas = sum(annual.map(r => r.gas));
+      const totalWater = sum(annual.map(r => r.water));
+
+      document.getElementById("stat-wells").textContent = numFormatter.format(wells.length);
+      document.getElementById("stat-rows").textContent = compactFormatter.format(totalRows);
+      document.getElementById("kpi-wells").textContent = numFormatter.format(producers);
+      document.getElementById("kpi-oil").textContent = totalFormatter.format(totalOil) + " m³";
+      document.getElementById("kpi-gas").textContent = totalFormatter.format(totalGas) + " m³";
+      document.getElementById("kpi-water").textContent = totalFormatter.format(totalWater) + " m³";
+
+      renderBasinChart();
+      renderAreaChart();
+    }
+
+    function renderBasinChart() {
+      const el = document.getElementById("basin-chart");
+      const chart = window.echarts.init(el);
+      charts.set("basin", chart);
+      const mk = metric => ({ name: METRICS[metric].label, type: "line", smooth: false, symbol: "none",
+        lineStyle: { width: 2 }, itemStyle: { color: METRICS[metric].color },
+        data: annual.map(r => r[METRICS[metric].label.toLowerCase()] ?? null) });
+      chart.setOption({
+        useUTC: true,
+        animation: false,
+        tooltip: { trigger: "axis", valueFormatter: v => isNum(v) ? compactFormatter.format(v) + " m³" : "—" },
+        legend: { top: 0, textStyle: { color: "#63716d" } },
+        grid: { left: 70, right: 20, top: 34, bottom: 30 },
+        xAxis: { type: "category", data: annual.map(r => String(r.y)), axisLabel: { color: "#63716d", hideOverlap: true } },
+        yAxis: { type: "value", axisLabel: { color: "#63716d", formatter: v => compactFormatter.format(v) }, splitLine: { lineStyle: { color: "#eee" } } },
+        series: [mk("oil"), mk("gas"), mk("water")]
+      });
+    }
+
+    function renderAreaChart() {
+      const byArea = new Map();
+      for (const w of wells) {
+        const key = w.area || "Unknown";
+        const cur = byArea.get(key) || { area: key, oil: 0 };
+        cur.oil += w.totalOil;
+        byArea.set(key, cur);
+      }
+      const top = [...byArea.values()].sort((a, b) => b.oil - a.oil).slice(0, 10);
+      const el = document.getElementById("area-chart");
+      const chart = window.echarts.init(el);
+      charts.set("area", chart);
+      chart.setOption({
+        animation: false,
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: v => isNum(v) ? compactFormatter.format(v) + " m³" : "—" },
+        grid: { left: 10, right: 60, top: 10, bottom: 10, containLabel: true },
+        xAxis: { type: "value", axisLabel: { color: "#63716d", formatter: v => compactFormatter.format(v) }, splitLine: { lineStyle: { color: "#eee" } } },
+        yAxis: { type: "category", inverse: true, data: top.map(t => t.area), axisLabel: { color: "#63716d", width: 130, overflow: "truncate" } },
+        series: [{ type: "bar", data: top.map(t => t.oil), itemStyle: { color: "#b95f36", borderRadius: [0, 4, 4, 0] }, barMaxWidth: 16 }]
+      });
+    }
+
+    // ---------------- explorer ----------------
+    function buildFilters() {
+      const areas = [...new Set(wells.map(w => w.area).filter(Boolean))].sort();
+      const types = [...new Set(wells.map(w => w.tipo_recurso).filter(Boolean))].sort();
+      fillSelect("filter-area", areas.map(a => ({ value: a, label: a })));
+      fillSelect("filter-type", types.map(t => ({ value: t, label: t })));
+    }
+
+    function fillSelect(id, options) {
+      const sel = document.getElementById(id);
+      options.forEach(o => {
+        const opt = document.createElement("option");
+        opt.value = o.value; opt.textContent = o.label;
+        sel.appendChild(opt);
+      });
+    }
+
+    function currentFilters() {
+      return {
+        q: document.getElementById("well-search").value.trim().toLowerCase(),
+        area: document.getElementById("filter-area").value,
+        type: document.getElementById("filter-type").value,
+        sort: document.getElementById("filter-sort").value
+      };
+    }
+
+    function renderWellList() {
+      const f = currentFilters();
+      let rows = wells.filter(w => {
+        if (f.area && w.area !== f.area) return false;
+        if (f.type && w.tipo_recurso !== f.type) return false;
+        if (f.q) {
+          const hay = `${w.sigla} ${w.nombrepropio ?? ""} ${w.codigopropio ?? ""} ${w.yacimiento ?? ""}`.toLowerCase();
+          if (!hay.includes(f.q)) return false;
+        }
+        return true;
+      });
+      rows = f.sort === "oil"
+        ? rows.sort((a, b) => b.totalOil - a.totalOil)
+        : rows.sort((a, b) => a.sigla.localeCompare(b.sigla));
+
+      const count = rows.length;
+      document.getElementById("result-count").textContent = `${numFormatter.format(count)} of ${numFormatter.format(wells.length)} wells`;
+      const list = document.getElementById("well-list");
+      list.replaceChildren();
+
+      rows.slice(0, LIST_LIMIT).forEach(w => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "well-row" + (selectedWell && selectedWell.idpozo === w.idpozo ? " selected" : "");
+        btn.setAttribute("role", "option");
+        const tipo = w.tipo_recurso ? `<span class="w-tipo">${escapeHTML(w.tipo_recurso)}</span>` : "";
+        btn.innerHTML =
+          `<span class="w-oil">${escapeHTML(compactFormatter.format(w.totalOil))}</span>` +
+          `<span class="w-sigla">${escapeHTML(w.sigla)}</span>` +
+          `<span class="w-meta">${escapeHTML(w.area ?? "")} · ${escapeHTML(w.yacimiento ?? "")} · ${escapeHTML(w.formprod ?? "")}${tipo}</span>`;
+        btn.addEventListener("click", () => selectWell(w));
+        list.appendChild(btn);
+      });
+
+      if (count === 0) {
+        const note = document.createElement("div");
+        note.className = "empty-note";
+        note.textContent = "No wells match the current search and filters.";
+        list.appendChild(note);
+      } else if (count > LIST_LIMIT) {
+        const note = document.createElement("div");
+        note.className = "empty-note";
+        note.textContent = `Showing the first ${LIST_LIMIT}; refine the search to narrow down.`;
+        list.appendChild(note);
+      }
+    }
+
+    async function selectWell(well) {
+      selectedWell = well;
+      renderWellList();
+
+      document.getElementById("detail-empty").hidden = true;
+      document.getElementById("detail-content").hidden = false;
+      document.getElementById("detail-sigla").textContent = well.sigla;
+      document.getElementById("detail-sub").textContent = `${well.area ?? ""} · ${well.yacimiento ?? ""} · ${well.formprod ?? ""}`;
+      document.getElementById("detail-pill").textContent = `ID ${well.idpozo}`;
+
+      const [metaRows, series] = await Promise.all([
+        query(
+          "SELECT idpozo::INTEGER AS idpozo, sigla, area, yacimiento, formacion, formprod, " +
+          "cuenca, provincia, tipo_recurso, sub_tipo_recurso, clasificacion, subclasificacion, " +
+          "empresa, cota, profundidad, coordenadax, coordenaday, " +
+          "pet_inicial, gas_inicial, agua_inicial, " +
+          "CAST(adjiv_fecha_inicio_perf AS VARCHAR) AS perf_start, " +
+          "CAST(adjiv_fecha_fin_perf AS VARCHAR) AS perf_end, " +
+          "CAST(adjiv_fecha_inicio_term AS VARCHAR) AS term_start, " +
+          "CAST(adjiv_fecha_abandono AS VARCHAR) AS abandono, has_production " +
+          `FROM wells WHERE idpozo = ${well.idpozo}`
+        ),
+        query(
+          "SELECT CAST(fecha AS VARCHAR) AS fecha, prod_pet AS oil, " +
+          "prod_gas * 1000.0 AS gas, prod_agua AS water, tef AS hrs " +
+          `FROM monthly WHERE idpozo = ${well.idpozo} ORDER BY fecha`
+        )
+      ]);
+      selectedSeries = series;
+
+      const meta = metaRows[0] || {};
+      renderMetadata("detail-meta", [
+        ["Well ID", meta.idpozo], ["Sigla", meta.sigla], ["Province", meta.provincia],
+        ["Basin", meta.cuenca], ["Area", meta.area], ["Field", meta.yacimiento],
+        ["Productive formation", meta.formprod], ["Formation", meta.formacion],
+        ["Resource type", meta.tipo_recurso], ["Classification", meta.clasificacion],
+        ["Operator (master)", meta.empresa], ["Production flag", meta.has_production ? "Yes" : "No"],
+        ["Well depth (m)", fmtNum(meta.profundidad)], ["Elevation (m)", fmtNum(meta.cota)],
+        ["Coordinates", fmtCoords(meta.coordenadax, meta.coordenaday)],
+        ["Initial oil (m³)", fmtNum(meta.pet_inicial)], ["Initial gas (m³)", fmtNum(meta.gas_inicial)],
+        ["Perf start", meta.perf_start ?? "Not reported"], ["Abandonment", meta.abandono ?? "Not reported"]
+      ]);
+
+      renderTotals("detail", selectedSeries);
+      document.getElementById("well-metric-control").querySelectorAll("input").forEach(i => {
+        if (i.checked) updateWellChart(i.value);
+      });
+    }
+
+    function fmtNum(v) { return isNum(v) ? numFormatter.format(v) : "Not reported"; }
+    function fmtCoords(x, y) {
+      return isNum(x) && isNum(y) ? `${numFormatter.format(x)}, ${numFormatter.format(y)}` : "Not reported";
+    }
+
+    function renderMetadata(id, pairs) {
+      const dl = document.getElementById(id);
+      dl.replaceChildren();
+      pairs.forEach(([label, value]) => {
+        const wrap = document.createElement("div");
+        const dt = document.createElement("dt"); dt.textContent = label;
+        const dd = document.createElement("dd"); dd.textContent = value == null ? "Not reported" : String(value);
+        wrap.append(dt, dd); dl.appendChild(wrap);
+      });
+    }
+
+    function renderTotals(prefix, rows) {
+      const summarize = key => {
+        let total = 0, count = 0;
+        rows.forEach(r => { if (isNum(r[key])) { total += r[key]; count += 1; } });
+        return { total, count };
+      };
+      const oil = summarize("oil"), gas = summarize("gas"), water = summarize("water");
+      const set = (suffix, val, cov) => {
+        document.getElementById(`${prefix}-${suffix}`).textContent = isNum(val) ? `${totalFormatter.format(val)} m³` : "Not reported";
+        document.getElementById(`${prefix}-${suffix}-cov`).textContent = `${cov} of ${rows.length} months with values`;
+      };
+      set("oil", oil.total, oil.count);
+      set("gas", gas.total, gas.count);
+      set("water", water.total, water.count);
+    }
+
+    function lineOption(rows, metric) {
+      const cfg = METRICS[metric];
+      return {
+        useUTC: true,
+        animation: false,
+        grid: { left: 70, right: 20, top: 36, bottom: 92, containLabel: false },
+        tooltip: {
+          trigger: "axis", confine: true,
+          backgroundColor: "rgba(255,254,250,0.98)", borderColor: "#dcded5", textStyle: { color: "#183231" },
+          formatter: params => {
+            const p = (Array.isArray(params) ? params : [params])[0];
+            if (!p || !p.data || p.data.rowIndex == null) return "";
+            const r = rows[p.data.rowIndex];
+            const esc = s => escapeHTML(String(s));
+            return `<div style="min-width:200px;font-family:system-ui,sans-serif">
+              <div style="margin-bottom:8px;color:#52635f;font-size:12px">${esc(r.fecha)}</div>
+              <div style="display:flex;justify-content:space-between;gap:20px;margin:4px 0"><span>${cfg.label}</span><strong>${esc(fmtVolume(r[metric]))}</strong></div>
+              <div style="display:flex;justify-content:space-between;gap:20px;margin:4px 0"><span>Hours</span><strong>${isNum(r.hrs) ? esc(numFormatter.format(r.hrs) + " h") : "Not reported"}</strong></div>
+              ${isNum(r[metric]) ? "" : '<div style="margin-top:6px;color:#7b6860;font-size:11px">No numeric value reported this month.</div>'}
+            </div>`;
+          }
+        },
+        xAxis: {
+          type: "time", axisLine: { lineStyle: { color: "#aab5ae" } }, axisTick: { show: false },
+          axisLabel: { color: "#63716d", formatter: v => new Date(v).toLocaleDateString("en-GB", { month: "short", year: "2-digit", timeZone: "UTC" }), hideOverlap: true },
+          splitLine: { show: false }
+        },
+        yAxis: {
+          type: "value", min: 0, name: `Monthly ${cfg.label.toLowerCase()} (m³)`, nameLocation: "middle", nameGap: 54,
+          nameTextStyle: { color: "#63716d", fontSize: 11 },
+          axisLabel: { color: "#63716d", formatter: v => compactFormatter.format(v) },
+          splitLine: { lineStyle: { color: "#e8e9e2", type: "dashed" } }
+        },
+        dataZoom: [
+          { type: "inside", xAxisIndex: 0, filterMode: "none", start: 0, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: false },
+          { type: "slider", xAxisIndex: 0, filterMode: "none", start: 0, end: 100, bottom: 20, height: 26, borderColor: "#dcded5", backgroundColor: "#f3f4ee", fillerColor: "rgba(57,102,91,0.14)", handleStyle: { color: "#55776a" }, textStyle: { color: "#63716d", fontSize: 10 } }
+        ],
+        series: [{
+          name: cfg.label, type: "line", connectNulls: false, smooth: false, showSymbol: true, symbol: "circle", symbolSize: 4,
+          data: rows.map((r, i) => ({ value: [r.fecha, r[metric]], rowIndex: i })),
+          itemStyle: { color: cfg.color, borderColor: "#fffefa", borderWidth: 1 },
+          lineStyle: { color: cfg.color, width: 2.2 }
+        }]
+      };
+    }
+
+    function ensureChart(key, elId) {
+      if (charts.has(key)) return charts.get(key);
+      const chart = window.echarts.init(document.getElementById(elId));
+      charts.set(key, chart);
+      return chart;
+    }
+
+    function updateWellChart(metric) {
+      const chart = ensureChart("well", "well-chart");
+      document.getElementById("well-active-metric").textContent = `Monthly ${METRICS[metric].label.toLowerCase()} volume · m³`;
+      chart.setOption(lineOption(selectedSeries, metric), { notMerge: true });
+    }
+
+    // ---------------- wiring ----------------
+    document.getElementById("well-search").addEventListener("input", renderWellList);
+    ["filter-area", "filter-type", "filter-sort"].forEach(id =>
+      document.getElementById(id).addEventListener("change", renderWellList)
+    );
+    document.getElementById("well-metric-control").addEventListener("change", e => updateWellChart(e.target.value));
+
+    let resizeFrame = null;
+    window.addEventListener("resize", () => {
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => charts.forEach(c => c.resize()));
+    });
+
+    if (typeof window.echarts === "undefined") {
+      showError("ECharts could not be loaded from its CDN. Check your connection and reload.");
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

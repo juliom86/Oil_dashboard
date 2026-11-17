@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.eggs/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generated data extracts (regenerable via fetch_data.py / export_ypf_ch.py)
+data.js
+pozos_ypf_ch.txt
+
+# Downloaded / built dataset files (regenerable from petroDB)
+data/
+datasets/
+downloads/
+*.parquet
+*.duckdb
+*.db
+*.sqlite
+*.sqlite3
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+.atl
